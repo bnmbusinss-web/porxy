@@ -2,7 +2,7 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 const http = require('http');
 const cors = require('cors');
-const path = require('path'); // إضافة مكتبة المسارات
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
@@ -11,7 +11,6 @@ const wss = new WebSocketServer({ server });
 app.use(cors());
 app.use(express.json());
 
-// إضافة هذا الجزء لعرض صفحة لوحة التحكم عند الدخول للرابط
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -24,22 +23,35 @@ let slots = {
 
 let clients = [];
 
+// --- هذا هو الجزء الجديد لإرسال حالة الخادم والبروكسيات المحفوظة ---
+app.get('/api/status', (req, res) => {
+    res.json({
+        connectedBrowsers: clients.length,
+        slots: slots
+    });
+});
+// ------------------------------------------------------------------
+
 function distributeProxies() {
     if (clients.length === 0) return;
 
-    let allActiveProxies = [];
+    let clientsPayload = clients.map(() => []);
+
     for (let i = 1; i <= 3; i++) {
-        if (slots[i].active) {
-            allActiveProxies = allActiveProxies.concat(slots[i].proxies);
+        if (slots[i].active && slots[i].proxies.length > 0) {
+            const slotProxies = slots[i].proxies;
+            const chunkSize = Math.ceil(slotProxies.length / clients.length);
+            
+            clients.forEach((client, index) => {
+                const chunk = slotProxies.slice(index * chunkSize, (index + 1) * chunkSize);
+                clientsPayload[index] = clientsPayload[index].concat(chunk);
+            });
         }
     }
 
-    const chunkSize = Math.ceil(allActiveProxies.length / clients.length);
-    
     clients.forEach((client, index) => {
-        const clientProxies = allActiveProxies.slice(index * chunkSize, (index + 1) * chunkSize);
         if (client.readyState === 1) { 
-            client.send(JSON.stringify({ type: 'UPDATE_PROXIES', proxies: clientProxies }));
+            client.send(JSON.stringify({ type: 'UPDATE_PROXIES', proxies: clientsPayload[index] }));
         }
     });
 }

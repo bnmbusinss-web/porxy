@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <title>لوحة التحكم بالبروكسيات</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f4f9; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .slot { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        textarea { width: 100%; height: 120px; margin-bottom: 10px; padding: 10px; box-sizing: border-box; direction: ltr; font-family: monospace; }
+        button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; color: white; font-weight: bold; margin-left: 5px; }
+        .btn-start { background-color: #4CAF50; }
+        .btn-stop { background-color: #f44336; }
+        .file-input { margin-bottom: 15px; display: block; }
+        .status { margin-bottom: 20px; padding: 15px; background: #e3f2fd; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>لوحة تحكم توزيع البروكسيات</h1>
+        
+        <div class="status">
+            <strong>عدد المتصفحات المتصلة حالياً: </strong> <span id="browsers-count" style="color: blue; font-size: 1.2em;">0</span>
+        </div>
+
+        <!-- الخانة 1 -->
+        <div class="slot" id="slot-1">
+            <h3>الخانة الأولى</h3>
+            <p>اختر ملف .txt أو الصق البروكسيات (صيغة IP:Port أو Host:Port):</p>
+            <input type="file" accept=".txt" class="file-input" onchange="handleFileUpload(1, this)">
+            <textarea id="proxies-1" placeholder="maroc123.duckdns.org:10001&#10;maroc123.duckdns.org:10002"></textarea>
+            <button class="btn-start" onclick="updateSlot(1, true)">تشغيل وتوزيع البروكسيات</button>
+            <button class="btn-stop" onclick="updateSlot(1, false)">إيقاف وسحب البروكسيات</button>
+        </div>
+
+        <!-- الخانة 2 -->
+        <div class="slot" id="slot-2">
+            <h3>الخانة الثانية</h3>
+            <input type="file" accept=".txt" class="file-input" onchange="handleFileUpload(2, this)">
+            <textarea id="proxies-2" placeholder="maroc123.duckdns.org:10001&#10;maroc123.duckdns.org:10002"></textarea>
+            <button class="btn-start" onclick="updateSlot(2, true)">تشغيل وتوزيع البروكسيات</button>
+            <button class="btn-stop" onclick="updateSlot(2, false)">إيقاف وسحب البروكسيات</button>
+        </div>
+
+        <!-- الخانة 3 -->
+        <div class="slot" id="slot-3">
+            <h3>الخانة الثالثة</h3>
+            <input type="file" accept=".txt" class="file-input" onchange="handleFileUpload(3, this)">
+            <textarea id="proxies-3" placeholder="maroc123.duckdns.org:10001&#10;maroc123.duckdns.org:10002"></textarea>
+            <button class="btn-start" onclick="updateSlot(3, true)">تشغيل وتوزيع البروكسيات</button>
+            <button class="btn-stop" onclick="updateSlot(3, false)">إيقاف وسحب البروكسيات</button>
+        </div>
+    </div>
+
+    <script>
+        // الرابط أصبح داخلياً لأنه سيعمل على نفس السيرفر
+        const API_URL = "/api/update-slot";
+
+        function handleFileUpload(slotId, inputElement) {
+            const file = inputElement.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById(`proxies-${slotId}`).value = e.target.result;
+            };
+            reader.readAsText(file);
+        }
+
+        function parseTextToProxies(text) {
+            try {
+                const parsed = JSON.parse(text);
+                if (Array.isArray(parsed)) return parsed;
+            } catch (e) {}
+
+            const lines = text.split('\n');
+            const proxies = [];
+            let counter = 1;
+
+            for (let line of lines) {
+                line = line.trim();
+                if (!line) continue;
+
+                const parts = line.split(':');
+                if (parts.length >= 2) {
+                    proxies.push({
+                        id: Date.now().toString() + "-" + counter++,
+                        type: "http",
+                        host: parts[0].trim(),
+                        port: parts[1].trim(),
+                        username: parts[2] ? parts[2].trim() : "", 
+                        password: parts[3] ? parts[3].trim() : ""
+                    });
+                }
+            }
+            return proxies;
+        }
+
+        async function updateSlot(slotId, isActive) {
+            const text = document.getElementById(`proxies-${slotId}`).value;
+            let proxies = [];
+            
+            if (isActive && text.trim() !== "") {
+                proxies = parseTextToProxies(text);
+                if (proxies.length === 0) {
+                    alert("الخانة فارغة أو التنسيق غير صحيح. يرجى استخدام صيغة IP:Port");
+                    return;
+                }
+            }
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ slotId, proxies, isActive })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    document.getElementById('browsers-count').innerText = result.connectedBrowsers;
+                    if (isActive) {
+                        alert(`تم تشغيل الخانة ${slotId} بنجاح! تم تجهيز ${proxies.length} بروكسي للتوزيع.`);
+                    } else {
+                        alert(`تم إيقاف الخانة ${slotId} وسحب بروكسياتها من المتصفحات!`);
+                        document.getElementById(`proxies-${slotId}`).value = "";
+                        document.querySelector(`#slot-${slotId} .file-input`).value = "";
+                    }
+                }
+            } catch (error) {
+                alert("حدث خطأ في الاتصال بالخادم.");
+            }
+        }
+    </script>
+</body>
+</html>

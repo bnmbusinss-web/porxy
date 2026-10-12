@@ -6,7 +6,7 @@
     <style>
         body { font-family: Arial, sans-serif; background-color: #f4f4f9; margin: 20px; }
         .container { max-width: 800px; margin: 0 auto; }
-        .slot { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .slot { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: 0.3s; }
         textarea { width: 100%; height: 120px; margin-bottom: 10px; padding: 10px; box-sizing: border-box; direction: ltr; font-family: monospace; }
         button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; color: white; font-weight: bold; margin-left: 5px; }
         .btn-start { background-color: #4CAF50; }
@@ -23,38 +23,70 @@
             <strong>عدد المتصفحات المتصلة حالياً: </strong> <span id="browsers-count" style="color: blue; font-size: 1.2em;">0</span>
         </div>
 
-        <!-- الخانة 1 -->
         <div class="slot" id="slot-1">
             <h3>الخانة الأولى</h3>
-            <p>اختر ملف .txt أو الصق البروكسيات (صيغة IP:Port أو Host:Port):</p>
             <input type="file" accept=".txt" class="file-input" onchange="handleFileUpload(1, this)">
-            <textarea id="proxies-1" placeholder="maroc123.duckdns.org:10001&#10;maroc123.duckdns.org:10002"></textarea>
+            <textarea id="proxies-1" placeholder="maroc123.duckdns.org:10001"></textarea>
             <button class="btn-start" onclick="updateSlot(1, true)">تشغيل وتوزيع البروكسيات</button>
             <button class="btn-stop" onclick="updateSlot(1, false)">إيقاف وسحب البروكسيات</button>
         </div>
 
-        <!-- الخانة 2 -->
         <div class="slot" id="slot-2">
             <h3>الخانة الثانية</h3>
             <input type="file" accept=".txt" class="file-input" onchange="handleFileUpload(2, this)">
-            <textarea id="proxies-2" placeholder="maroc123.duckdns.org:10001&#10;maroc123.duckdns.org:10002"></textarea>
+            <textarea id="proxies-2" placeholder="maroc123.duckdns.org:10001"></textarea>
             <button class="btn-start" onclick="updateSlot(2, true)">تشغيل وتوزيع البروكسيات</button>
             <button class="btn-stop" onclick="updateSlot(2, false)">إيقاف وسحب البروكسيات</button>
         </div>
 
-        <!-- الخانة 3 -->
         <div class="slot" id="slot-3">
             <h3>الخانة الثالثة</h3>
             <input type="file" accept=".txt" class="file-input" onchange="handleFileUpload(3, this)">
-            <textarea id="proxies-3" placeholder="maroc123.duckdns.org:10001&#10;maroc123.duckdns.org:10002"></textarea>
+            <textarea id="proxies-3" placeholder="maroc123.duckdns.org:10001"></textarea>
             <button class="btn-start" onclick="updateSlot(3, true)">تشغيل وتوزيع البروكسيات</button>
             <button class="btn-stop" onclick="updateSlot(3, false)">إيقاف وسحب البروكسيات</button>
         </div>
     </div>
 
     <script>
-        // الرابط أصبح داخلياً لأنه سيعمل على نفس السيرفر
         const API_URL = "/api/update-slot";
+        const STATUS_URL = "/api/status";
+
+        // جلب البيانات من الخادم عند فتح الصفحة
+        async function loadServerState() {
+            try {
+                const response = await fetch(STATUS_URL);
+                const data = await response.json();
+                
+                document.getElementById('browsers-count').innerText = data.connectedBrowsers;
+
+                // تعبئة الخانات بالبروكسيات المحفوظة في الخادم
+                for (let i = 1; i <= 3; i++) {
+                    if (data.slots[i] && data.slots[i].proxies.length > 0) {
+                        const proxiesText = data.slots[i].proxies.map(p => {
+                            return p.username && p.password ? 
+                                `${p.host}:${p.port}:${p.username}:${p.password}` : 
+                                `${p.host}:${p.port}`;
+                        }).join('\n');
+                        document.getElementById(`proxies-${i}`).value = proxiesText;
+                    }
+                }
+            } catch (error) {
+                console.error("خطأ في الاتصال بالخادم:", error);
+            }
+        }
+
+        // تشغيل دالة الجلب فور تحميل الصفحة
+        window.onload = loadServerState;
+
+        // تحديث عدد المتصفحات المتصلة كل 5 ثواني دون التأثير على الخانات
+        setInterval(async () => {
+            try {
+                const response = await fetch(STATUS_URL);
+                const data = await response.json();
+                document.getElementById('browsers-count').innerText = data.connectedBrowsers;
+            } catch (error) {}
+        }, 5000);
 
         function handleFileUpload(slotId, inputElement) {
             const file = inputElement.files[0];
@@ -120,7 +152,7 @@
                 if (result.success) {
                     document.getElementById('browsers-count').innerText = result.connectedBrowsers;
                     if (isActive) {
-                        alert(`تم تشغيل الخانة ${slotId} بنجاح! تم تجهيز ${proxies.length} بروكسي للتوزيع.`);
+                        alert(`تم تشغيل الخانة ${slotId} بنجاح!`);
                     } else {
                         alert(`تم إيقاف الخانة ${slotId} وسحب بروكسياتها من المتصفحات!`);
                         document.getElementById(`proxies-${slotId}`).value = "";

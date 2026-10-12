@@ -1,12 +1,20 @@
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const http = require('http');
+const cors = require('cors');
+const path = require('path'); // إضافة مكتبة المسارات
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
+app.use(cors());
 app.use(express.json());
+
+// إضافة هذا الجزء لعرض صفحة لوحة التحكم عند الدخول للرابط
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 let slots = {
     1: { active: true, proxies: [] },

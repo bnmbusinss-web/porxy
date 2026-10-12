@@ -9,7 +9,11 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 app.use(cors());
-app.use(express.json());
+
+// --- الحل هنا: زيادة سعة الخادم لاستقبال آلاف البروكسيات (حتى 50 ميجابايت) ---
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// -------------------------------------------------------------------------
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
@@ -85,7 +89,6 @@ wss.on('connection', (ws) => {
     });
 });
 
-// تم تمديد وقت التنظيف إلى 30 ثانية لتفادي طرد المتصفحات النشطة
 setInterval(() => {
     let needsUpdate = false;
     clients.forEach((ws) => {

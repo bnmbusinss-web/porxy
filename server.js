@@ -9,11 +9,8 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 app.use(cors());
-
-// --- الحل هنا: زيادة سعة الخادم لاستقبال آلاف البروكسيات (حتى 50 ميجابايت) ---
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
-// -------------------------------------------------------------------------
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
@@ -28,59 +25,68 @@ let slots = {
 let clients = [];
 
 app.get('/api/status', (req, res) => {
-    clients = clients.filter(client => client.readyState === 1);
+    // حساب المتصفحات التي أرسلت هويتها فقط
+    const activeClients = clients.filter(client => client.readyState === 1 && client.browserId);
     res.json({
-        connectedBrowsers: clients.length,
+        connectedBrowsers: activeClients.length,
         slots: slots
     });
 });
 
 function distributeProxies() {
-    clients = clients.filter(client => client.readyState === 1);
-    if (clients.length === 0) return;
+    const activeClients = clients.filter(client => client.readyState === 1 && client.browserId);
+    if (activeClients.length === 0) return;
 
-    let clientsPayload = clients.map(() => []);
+    let clientsPayload = activeClients.map(() => []);
 
     for (let i = 1; i <= 3; i++) {
         if (slots[i].active && slots[i].proxies.length > 0) {
             const slotProxies = slots[i].proxies;
-            const chunkSize = Math.ceil(slotProxies.length / clients.length);
+            const chunkSize = Math.ceil(slotProxies.length / activeClients.length);
             
-            clients.forEach((client, index) => {
+            activeClients.forEach((client, index) => {
                 const chunk = slotProxies.slice(index * chunkSize, (index + 1) * chunkSize);
                 clientsPayload[index] = clientsPayload[index].concat(chunk);
             });
         }
     }
 
-    clients.forEach((client, index) => {
-        if (client.readyState === 1) { 
-            try {
-                client.send(JSON.stringify({ type: 'UPDATE_PROXIES', proxies: clientsPayload[index] }));
-            } catch (e) {}
-        }
+    activeClients.forEach((client, index) => {
+        try {
+            client.send(JSON.stringify({ type: 'UPDATE_PROXIES', proxies: clientsPayload[index] }));
+        } catch (e) {}
     });
 }
 
 wss.on('connection', (ws) => {
     ws.isAlive = true;
     clients.push(ws);
-    console.log(`متصفح متصل. العدد: ${clients.length}`);
-    distributeProxies();
-
+    
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
-            if (data.type === 'PING') {
+            
+            if (data.type === 'INIT') {
+                // إذا وجد السيرفر اتصالاً قديماً يحمل نفس هوية هذا المتصفح، سيقوم بقتله فوراً
+                const oldConnections = clients.filter(c => c.browserId === data.id && c !== ws);
+                oldConnections.forEach(oldWs => {
+                    try { oldWs.terminate(); } catch(e) {}
+                });
+                
+                // تنظيف المصفوفة من الاتصالات الميتة
+                clients = clients.filter(c => c.browserId !== data.id || c === ws);
+                ws.browserId = data.id; // تثبيت هوية المتصفح الجديد
+                ws.isAlive = true;
+                distributeProxies();
+            } 
+            else if (data.type === 'PING') {
                 ws.isAlive = true; 
-                return;
             }
         } catch(e) {}
     });
 
     ws.on('close', () => {
         clients = clients.filter(client => client !== ws && client.readyState === 1);
-        console.log(`متصفح غادر. العدد: ${clients.length}`);
         distributeProxies();
     });
     
@@ -100,7 +106,7 @@ setInterval(() => {
     });
 
     if (needsUpdate) {
-        clients = clients.filter(client => client.readyState === 1);
+        clients = clients.filter(client => client.readyState === 1 && client.browserId);
         distributeProxies();
     }
 }, 30000);
@@ -110,7 +116,7 @@ app.post('/api/update-slot', (req, res) => {
     if (slots[slotId]) {
         slots[slotId].proxies = proxies || slots[slotId].proxies;
         slots[slotId].active = isActive !== undefined ? isActive : slots[slotId].active;
-        clients = clients.filter(client => client.readyState === 1);
+        clients = clients.filter(client => client.readyState === 1 && client.browserId);
         distributeProxies();
         res.json({ success: true, connectedBrowsers: clients.length });
     } else {

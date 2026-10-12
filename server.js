@@ -23,7 +23,9 @@ let slots = {
 
 let clients = [];
 
+// تحديث: تنظيف الاتصالات الميتة قبل إرسال الحالة للوحة التحكم
 app.get('/api/status', (req, res) => {
+    clients = clients.filter(client => client.readyState === 1);
     res.json({
         connectedBrowsers: clients.length,
         slots: slots
@@ -31,6 +33,7 @@ app.get('/api/status', (req, res) => {
 });
 
 function distributeProxies() {
+    clients = clients.filter(client => client.readyState === 1);
     if (clients.length === 0) return;
 
     let clientsPayload = clients.map(() => []);
@@ -55,15 +58,18 @@ function distributeProxies() {
 }
 
 wss.on('connection', (ws) => {
+    ws.isAlive = true; // علامة لمعرفة ما إذا كان المتصفح حياً
     clients.push(ws);
     console.log(`متصفح متصل. العدد: ${clients.length}`);
     distributeProxies();
 
-    // استقبال رسائل "النبض" من الإضافة لمنع السبات وإبقاء المتصفح ظاهراً دائماً
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
-            if (data.type === 'PING') return; // تجاهل النبض بهدوء
+            if (data.type === 'PING') {
+                ws.isAlive = true; // تحديث حالة النشاط عند استقبال النبض
+                return;
+            }
         } catch(e) {}
     });
 
@@ -74,11 +80,30 @@ wss.on('connection', (ws) => {
     });
 });
 
+// --- نظام التنظيف الجديد: فحص وطرد الاتصالات الميتة كل 15 ثانية ---
+setInterval(() => {
+    let needsUpdate = false;
+    clients.forEach((ws) => {
+        if (ws.isAlive === false) {
+            ws.terminate(); // إنهاء الاتصال الميت بالقوة
+            needsUpdate = true;
+        }
+        ws.isAlive = false; // إعادة تعيين العلامة بانتظار النبض القادم
+    });
+
+    if (needsUpdate) {
+        clients = clients.filter(client => client.readyState === 1);
+        distributeProxies();
+    }
+}, 15000);
+// -----------------------------------------------------------------
+
 app.post('/api/update-slot', (req, res) => {
     const { slotId, proxies, isActive } = req.body;
     if (slots[slotId]) {
         slots[slotId].proxies = proxies || slots[slotId].proxies;
         slots[slotId].active = isActive !== undefined ? isActive : slots[slotId].active;
+        clients = clients.filter(client => client.readyState === 1); // تنظيف قبل التوزيع
         distributeProxies();
         res.json({ success: true, connectedBrowsers: clients.length });
     } else {

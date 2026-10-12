@@ -12,7 +12,7 @@
         .btn-start { background-color: #4CAF50; }
         .btn-stop { background-color: #f44336; }
         .file-input { margin-bottom: 15px; display: block; }
-        .status { margin-bottom: 20px; padding: 15px; background: #e3f2fd; border-radius: 8px; }
+        .status { margin-bottom: 20px; padding: 15px; background: #e3f2fd; border-radius: 8px; font-size: 1.2em;}
     </style>
 </head>
 <body>
@@ -20,7 +20,7 @@
         <h1>لوحة تحكم توزيع البروكسيات</h1>
         
         <div class="status">
-            <strong>عدد المتصفحات المتصلة حالياً: </strong> <span id="browsers-count" style="color: blue; font-size: 1.2em;">0</span>
+            <strong>عدد المتصفحات المتصلة حالياً: </strong> <span id="browsers-count" style="color: blue; font-weight: bold; font-size: 1.5em;">0</span>
         </div>
 
         <div class="slot" id="slot-1">
@@ -52,15 +52,12 @@
         const API_URL = "/api/update-slot";
         const STATUS_URL = "/api/status";
 
-        // جلب البيانات من الخادم عند فتح الصفحة
         async function loadServerState() {
             try {
                 const response = await fetch(STATUS_URL);
                 const data = await response.json();
-                
                 document.getElementById('browsers-count').innerText = data.connectedBrowsers;
 
-                // تعبئة الخانات بالبروكسيات المحفوظة في الخادم
                 for (let i = 1; i <= 3; i++) {
                     if (data.slots[i] && data.slots[i].proxies.length > 0) {
                         const proxiesText = data.slots[i].proxies.map(p => {
@@ -71,27 +68,23 @@
                         document.getElementById(`proxies-${i}`).value = proxiesText;
                     }
                 }
-            } catch (error) {
-                console.error("خطأ في الاتصال بالخادم:", error);
-            }
+            } catch (error) {}
         }
 
-        // تشغيل دالة الجلب فور تحميل الصفحة
         window.onload = loadServerState;
 
-        // تحديث عدد المتصفحات المتصلة كل 5 ثواني دون التأثير على الخانات
+        // تحديث سريع جداً كل ثانيتين لضمان ظهور أي متصفح يتصل فوراً
         setInterval(async () => {
             try {
                 const response = await fetch(STATUS_URL);
                 const data = await response.json();
                 document.getElementById('browsers-count').innerText = data.connectedBrowsers;
             } catch (error) {}
-        }, 5000);
+        }, 2000); 
 
         function handleFileUpload(slotId, inputElement) {
             const file = inputElement.files[0];
             if (!file) return;
-
             const reader = new FileReader();
             reader.onload = function(e) {
                 document.getElementById(`proxies-${slotId}`).value = e.target.result;
@@ -104,15 +97,12 @@
                 const parsed = JSON.parse(text);
                 if (Array.isArray(parsed)) return parsed;
             } catch (e) {}
-
             const lines = text.split('\n');
             const proxies = [];
             let counter = 1;
-
             for (let line of lines) {
                 line = line.trim();
                 if (!line) continue;
-
                 const parts = line.split(':');
                 if (parts.length >= 2) {
                     proxies.push({
@@ -131,7 +121,6 @@
         async function updateSlot(slotId, isActive) {
             const text = document.getElementById(`proxies-${slotId}`).value;
             let proxies = [];
-            
             if (isActive && text.trim() !== "") {
                 proxies = parseTextToProxies(text);
                 if (proxies.length === 0) {
@@ -146,14 +135,18 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ slotId, proxies, isActive })
                 });
-                
                 const result = await response.json();
                 
                 if (result.success) {
                     document.getElementById('browsers-count').innerText = result.connectedBrowsers;
                     if (isActive) {
-                        // هنا تم التعديل لإظهار عدد المتصفحات في التنبيه
-                        alert(`تم تشغيل الخانة ${slotId} بنجاح!\nتم توزيع ${proxies.length} بروكسي على: ${result.connectedBrowsers} متصفح متصل.`);
+                        // حساب دقيق لعدد البروكسيات لكل متصفح
+                        const proxiesPerBrowser = result.connectedBrowsers > 0 ? Math.ceil(proxies.length / result.connectedBrowsers) : 0;
+                        
+                        alert(`تم تشغيل الخانة ${slotId} بنجاح!\n\n` + 
+                              `🖥️ عدد المتصفحات المتصلة: ${result.connectedBrowsers}\n` +
+                              `🌐 إجمالي البروكسيات في الخانة: ${proxies.length}\n` +
+                              `📦 حصة كل متصفح: حوالي ${proxiesPerBrowser} بروكسي.`);
                     } else {
                         alert(`تم إيقاف الخانة ${slotId} وسحب بروكسياتها من المتصفحات!`);
                         document.getElementById(`proxies-${slotId}`).value = "";

@@ -152,7 +152,8 @@
                 if (result.success) {
                     document.getElementById('browsers-count').innerText = result.connectedBrowsers;
                     if (isActive) {
-                        alert(`تم تشغيل الخانة ${slotId} بنجاح!`);
+                        // هنا تم التعديل لإظهار عدد المتصفحات في التنبيه
+                        alert(`تم تشغيل الخانة ${slotId} بنجاح!\nتم توزيع ${proxies.length} بروكسي على: ${result.connectedBrowsers} متصفح متصل.`);
                     } else {
                         alert(`تم إيقاف الخانة ${slotId} وسحب بروكسياتها من المتصفحات!`);
                         document.getElementById(`proxies-${slotId}`).value = "";

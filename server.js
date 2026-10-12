@@ -23,7 +23,6 @@ let slots = {
 
 let clients = [];
 
-// تحديث: تنظيف الاتصالات الميتة قبل إرسال الحالة للوحة التحكم
 app.get('/api/status', (req, res) => {
     clients = clients.filter(client => client.readyState === 1);
     res.json({
@@ -52,13 +51,15 @@ function distributeProxies() {
 
     clients.forEach((client, index) => {
         if (client.readyState === 1) { 
-            client.send(JSON.stringify({ type: 'UPDATE_PROXIES', proxies: clientsPayload[index] }));
+            try {
+                client.send(JSON.stringify({ type: 'UPDATE_PROXIES', proxies: clientsPayload[index] }));
+            } catch (e) {}
         }
     });
 }
 
 wss.on('connection', (ws) => {
-    ws.isAlive = true; // علامة لمعرفة ما إذا كان المتصفح حياً
+    ws.isAlive = true;
     clients.push(ws);
     console.log(`متصفح متصل. العدد: ${clients.length}`);
     distributeProxies();
@@ -67,43 +68,46 @@ wss.on('connection', (ws) => {
         try {
             const data = JSON.parse(message);
             if (data.type === 'PING') {
-                ws.isAlive = true; // تحديث حالة النشاط عند استقبال النبض
+                ws.isAlive = true; 
                 return;
             }
         } catch(e) {}
     });
 
     ws.on('close', () => {
-        clients = clients.filter(client => client !== ws);
+        clients = clients.filter(client => client !== ws && client.readyState === 1);
         console.log(`متصفح غادر. العدد: ${clients.length}`);
         distributeProxies();
     });
+    
+    ws.on('error', () => {
+        ws.isAlive = false;
+    });
 });
 
-// --- نظام التنظيف الجديد: فحص وطرد الاتصالات الميتة كل 15 ثانية ---
+// تم تمديد وقت التنظيف إلى 30 ثانية لتفادي طرد المتصفحات النشطة
 setInterval(() => {
     let needsUpdate = false;
     clients.forEach((ws) => {
         if (ws.isAlive === false) {
-            ws.terminate(); // إنهاء الاتصال الميت بالقوة
+            try { ws.terminate(); } catch(e) {}
             needsUpdate = true;
         }
-        ws.isAlive = false; // إعادة تعيين العلامة بانتظار النبض القادم
+        ws.isAlive = false; 
     });
 
     if (needsUpdate) {
         clients = clients.filter(client => client.readyState === 1);
         distributeProxies();
     }
-}, 15000);
-// -----------------------------------------------------------------
+}, 30000);
 
 app.post('/api/update-slot', (req, res) => {
     const { slotId, proxies, isActive } = req.body;
     if (slots[slotId]) {
         slots[slotId].proxies = proxies || slots[slotId].proxies;
         slots[slotId].active = isActive !== undefined ? isActive : slots[slotId].active;
-        clients = clients.filter(client => client.readyState === 1); // تنظيف قبل التوزيع
+        clients = clients.filter(client => client.readyState === 1);
         distributeProxies();
         res.json({ success: true, connectedBrowsers: clients.length });
     } else {

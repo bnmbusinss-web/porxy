@@ -23,14 +23,12 @@ let slots = {
 
 let clients = [];
 
-// --- هذا هو الجزء الجديد لإرسال حالة الخادم والبروكسيات المحفوظة ---
 app.get('/api/status', (req, res) => {
     res.json({
         connectedBrowsers: clients.length,
         slots: slots
     });
 });
-// ------------------------------------------------------------------
 
 function distributeProxies() {
     if (clients.length === 0) return;
@@ -60,6 +58,14 @@ wss.on('connection', (ws) => {
     clients.push(ws);
     console.log(`متصفح متصل. العدد: ${clients.length}`);
     distributeProxies();
+
+    // استقبال رسائل "النبض" من الإضافة لمنع السبات وإبقاء المتصفح ظاهراً دائماً
+    ws.on('message', (message) => {
+        try {
+            const data = JSON.parse(message);
+            if (data.type === 'PING') return; // تجاهل النبض بهدوء
+        } catch(e) {}
+    });
 
     ws.on('close', () => {
         clients = clients.filter(client => client !== ws);

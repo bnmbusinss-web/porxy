@@ -25,7 +25,6 @@ let slots = {
 let clients = [];
 
 app.get('/api/status', (req, res) => {
-    // حساب المتصفحات التي أرسلت هويتها فقط
     const activeClients = clients.filter(client => client.readyState === 1 && client.browserId);
     res.json({
         connectedBrowsers: activeClients.length,
@@ -42,11 +41,18 @@ function distributeProxies() {
     for (let i = 1; i <= 3; i++) {
         if (slots[i].active && slots[i].proxies.length > 0) {
             const slotProxies = slots[i].proxies;
-            const chunkSize = Math.ceil(slotProxies.length / activeClients.length);
             
+            // القسمة العادلة والمثالية لضمان عدم حصول أي متصفح على قائمة فارغة
+            const baseCount = Math.floor(slotProxies.length / activeClients.length);
+            const remainder = slotProxies.length % activeClients.length;
+            let startIndex = 0;
+
             activeClients.forEach((client, index) => {
-                const chunk = slotProxies.slice(index * chunkSize, (index + 1) * chunkSize);
+                // المتصفحات الأولى تأخذ +1 من باقي القسمة حتى ينفد الباقي
+                const currentChunkSize = baseCount + (index < remainder ? 1 : 0);
+                const chunk = slotProxies.slice(startIndex, startIndex + currentChunkSize);
                 clientsPayload[index] = clientsPayload[index].concat(chunk);
+                startIndex += currentChunkSize;
             });
         }
     }
@@ -67,15 +73,13 @@ wss.on('connection', (ws) => {
             const data = JSON.parse(message);
             
             if (data.type === 'INIT') {
-                // إذا وجد السيرفر اتصالاً قديماً يحمل نفس هوية هذا المتصفح، سيقوم بقتله فوراً
                 const oldConnections = clients.filter(c => c.browserId === data.id && c !== ws);
                 oldConnections.forEach(oldWs => {
                     try { oldWs.terminate(); } catch(e) {}
                 });
                 
-                // تنظيف المصفوفة من الاتصالات الميتة
                 clients = clients.filter(c => c.browserId !== data.id || c === ws);
-                ws.browserId = data.id; // تثبيت هوية المتصفح الجديد
+                ws.browserId = data.id; 
                 ws.isAlive = true;
                 distributeProxies();
             } 
